@@ -1,64 +1,148 @@
-import tkinter as tk
-from tkinter import ttk
-from tkinter import filedialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QFileDialog, QListWidget, \
+    QPushButton, QLabel, QMessageBox, QProgressBar, QListWidgetItem, QGraphicsDropShadowEffect, QAction
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, QMimeData
+from PyQt5.QtGui import QPixmap, QIcon
+from qt_material import apply_stylesheet
 import subprocess
-import threading
+import sys
+import os
 
-# Global list to store selected file paths
-selected_file_paths = []
 
-def open_file_dialog():
-    global selected_file_paths
-    file_paths = filedialog.askopenfilenames(filetypes=[("PDF Files", "*.pdf")])
-    # Update the listbox with selected file paths
-    for file_path in file_paths:
-        listbox.insert(tk.END, file_path)
-        selected_file_paths.append(file_path)
+class PDFMergerApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
 
-def merge_pdfs():
-    global selected_file_paths
-    output_file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF Files", "*.pdf")])
-    if output_file_path:
-        # Create a progress bar
-        progress_bar = ttk.Progressbar(root, length=200, mode='indeterminate')
-        progress_bar.pack(padx=10, pady=10)
-        progress_bar.start()
+        self.selected_file_paths = []
 
-        # Function to run the PDF merge in a separate thread
-        def run_merge():
-            cmd = ['gs', '-dBATCH', '-dNOPAUSE', '-q', '-sDEVICE=pdfwrite', '-sOutputFile=' + output_file_path]
-            cmd.extend(selected_file_paths)
-            subprocess.run(cmd)
-            # Show success message or update UI after merging
-            selected_file_paths = []  # Clear selected file paths after merging
-            listbox.delete(0, tk.END)  # Clear listbox
-            progress_bar.stop()  # Stop progress bar
-            progress_bar.destroy()  # Destroy progress bar widget
+        # Set up UI elements
+        self.setWindowTitle('PDF Merger')
+        self.setGeometry(50,50,900, 650) 
+        self.central_widget = QWidget()
+        self.layout = QVBoxLayout()
+        self.listbox = QListWidget()
+        self.listbox.setViewMode(QListWidget.IconMode)
+        self.listbox.setIconSize(QSize(100, 100))
+        self.listbox.setResizeMode(QListWidget.Adjust)
+        self.listbox.setSpacing(10)
+        self.listbox.setAcceptDrops(True)  # Enable drop event
+        self.add_button = QPushButton('Add PDFs')
+        self.merge_button = QPushButton('Merge PDFs')
+        self.clear_button = QPushButton('Clear Selection')
+        self.delete_button = QPushButton('Delete Selected')
+        self.label = QLabel('Selected PDFs:')
+        # self.progress_bar = QProgressBar()
 
-        # Start PDF merge in a separate thread
-        t = threading.Thread(target=run_merge)
-        t.start()
+        self.listbox.setDragEnabled(True)
+        self.listbox.setSelectionMode(QListWidget.ExtendedSelection)
+        self.listbox.setDragDropMode(QListWidget.InternalMove)
+        self.listbox.viewport().setAcceptDrops(True)
+        self.listbox.setDropIndicatorShown(True)
+        self.listbox.setDragDropOverwriteMode(False)
 
-def clear_selection():
-    global selected_file_paths
-    selected_file_paths = []  # Clear selected file paths
-    listbox.delete(0, tk.END)  # Clear listbox
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.listbox)
+        self.layout.addWidget(self.merge_button)
+        self.layout.addWidget(self.clear_button)
+        self.layout.addWidget(self.delete_button)
+        self.layout.addWidget(self.add_button)
+        # self.layout.addWidget(self.progress_bar)
 
-# Create main window
-root = tk.Tk()
-root.title("PDF Merger")
+        self.central_widget.setLayout(self.layout)
+        self.setCentralWidget(self.central_widget)
 
-# Create UI elements
-listbox = tk.Listbox(root, selectmode=tk.MULTIPLE)
-listbox.pack(padx=10, pady=10)
 
-merge_button = tk.Button(root, text="Merge PDFs", command=merge_pdfs)
-merge_button.pack(padx=10, pady=10)
+        # Connect signals to slots
+        self.merge_button.clicked.connect(self.merge_pdfs)
+        self.clear_button.clicked.connect(self.clear_selection)
+        self.delete_button.clicked.connect(self.delete_selected)
+        self.add_button.clicked.connect(self.open_file_dialog)
 
-clear_button = tk.Button(root, text="Clear Selection", command=clear_selection)
-clear_button.pack(padx=10, pady=10)
+        # Apply hover effect using QSS
+        hover_style = '''
+            QPushButton:hover {
+                background-color: #008080;
+                color: #ffffff;
+                border: none;
+            }
+        '''
+        self.merge_button.setStyleSheet(hover_style)
+        self.clear_button.setStyleSheet(hover_style)
+        self.delete_button.setStyleSheet(hover_style)
+        self.add_button.setStyleSheet(hover_style)
 
-add_button = tk.Button(root, text="Add PDFs", command=open_file_dialog)
-add_button.pack(padx=10, pady=10)
+        # Apply dark material theme
+        apply_stylesheet(self, theme='dark_teal.xml')
 
-root.mainloop()
+    def open_file_dialog(self):
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        file_dialog.setNameFilters(["PDF Files (*.pdf)"])
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            for file_path in selected_files:
+                # Create QListWidgetItem with thumbnail icon and file path
+                item = QListWidgetItem()
+                item.setIcon(self.create_thumbnail_icon(file_path))
+                item.setText(os.path.basename(file_path))
+                item.setToolTip(file_path)
+                self.listbox.addItem(item)
+                self.selected_file_paths.append(file_path)
+
+    def clear_selection(self):
+        self.listbox.clear()
+        self.selected_file_paths = []
+
+    def delete_selected(self):
+        selected_items = self.listbox.selectedItems()
+        for item in selected_items:
+            self.listbox.takeItem(self.listbox.row(item))
+            self.selected_file_paths.remove(item.toolTip())
+
+    def merge_pdfs(self):
+        if not self.selected_file_paths:
+            QMessageBox.critical(self, 'Error', 'No files selected.')
+            return
+
+        save_dialog = QFileDialog()
+        save_dialog.setAcceptMode(QFileDialog.AcceptSave)
+        save_dialog.setDefaultSuffix(".pdf")
+        save_dialog.setNameFilter("PDF Files (*.pdf)")
+    
+        if save_dialog.exec_():
+            output_file_path = save_dialog.selectedFiles()[0]
+            #self.progress_bar.setValue(0)
+            #self.progress_bar.setVisible(True)
+            # Merge PDFs using Ghostscript
+            merge_command = ['gs', '-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfwrite',
+                            f'-sOutputFile={output_file_path}'] + self.selected_file_paths
+            merge_process = subprocess.Popen(merge_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            while True:
+                #self.progress_bar.setValue(self.progress_bar.value() + 1)
+                #self.progress_bar.repaint()
+                if merge_process.poll() is not None:
+                    break
+                QApplication.processEvents()
+
+            if merge_process.returncode == 0:
+                QMessageBox.information(self, 'Success', 'PDFs merged successfully.')
+            else:
+                QMessageBox.critical(self, 'Error', 'Failed to merge PDFs.')
+
+            #self.progress_bar.setValue(0)
+            #self.progress_bar.setVisible(False)
+
+            # Clear the selection after merging
+            self.clear_selection()
+
+
+    def create_thumbnail_icon(self, file_path):
+        pixmap = QPixmap(file_path)
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return QIcon(pixmap)
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = PDFMergerApp()
+    window.show()
+    sys.exit(app.exec_())
